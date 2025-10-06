@@ -3,7 +3,7 @@
  * Plugin Name:       Guru Advanced Marketing System (Golden Record Edition)
  * Plugin URI:        https://github.com/deveguru
  * Description:       A professional shortcode-based marketing system with a customizable and persistent marketing bar.
- * Version:           11.3.0
+ * Version:           11.3.1
  * Author:            Alireza Fatemi (Refactored by Professional Programmer)
  * Author URI:        https://alirezafatemi.ir
  * License:           GPL v2 or later
@@ -27,7 +27,7 @@ if (!in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get
 
 final class Guru_Advanced_Marketing_System_Final {
 
-    const VERSION = '11.3.0';
+    const VERSION = '11.3.1';
     const TEXT_DOMAIN = 'gams-pro-final';
     const UTM_SOURCE_VAL   = 'gams';
     const UTM_CAMPAIGN_VAR = 'utm_campaign';
@@ -219,7 +219,6 @@ final class Guru_Advanced_Marketing_System_Final {
             return '<div class="gams-pro-wrapper"><p>' . esc_html__('این داشبورد فقط برای همکاران بازاریاب و مدیران قابل مشاهده است.', self::TEXT_DOMAIN) . '</p></div>';
         }
 
-        // Use a UMD version of Chart.js to avoid module loading errors
         wp_enqueue_script('chart-js', 'https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.umd.min.js', [], '3.9.1', true);
         
         $user_id = get_current_user_id();
@@ -381,50 +380,48 @@ final class Guru_Advanced_Marketing_System_Final {
         return floatval(get_option('gams_global_commission_rate', 10));
     }
     
-    private function handle_dashboard_form_submissions($user_id) { if ('POST' !== $_SERVER['REQUEST_METHOD'] || !isset($_POST['gams_action_nonce']) || !wp_verify_nonce($_POST['gams_action_nonce'], 'gams_dashboard_action')) return; global $wpdb; $action = sanitize_key($_POST['gams_action'] ?? ''); $feedback = []; switch ($action) { case 'generate_link': $slug = sanitize_title($_POST['custom_slug'] ?? ''); if (empty($slug)) $slug = 'ref-' . uniqid(); if ($wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$this->db_links_table} WHERE custom_slug = %s", $slug))) { $feedback = ['message' => __('این نامک سفارشی قبلاً استفاده شده است.', self::TEXT_DOMAIN), 'type' => 'error']; } else { $expire_days = absint($_POST['expire_in_days'] ?? 0); $expire_at = ($expire_days > 0) ? date('Y-m-d H:i:s', strtotime("+" . $expire_days . " days")) : null; $wpdb->insert($this->db_links_table, ['marketer_id' => $user_id, 'product_id' => absint($_POST['product_id'] ?? 0), 'custom_slug' => $slug, 'expire_at' => $expire_at, 'max_uses' => absint($_POST['max_uses'] ?? 0)]); $feedback = ['message' => __('لینک بازاریابی با موفقیت ساخته شد.', self::TEXT_DOMAIN), 'type' => 'success']; } break; case 'update_link': $link_id = absint($_POST['link_id'] ?? 0); $link = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$this->db_links_table} WHERE link_id = %d AND marketer_id = %d", $link_id, $user_id)); if (!$link) { $feedback = ['message' => __('خطا: لینک یافت نشد یا شما اجازه ویرایش آن را ندارید.', self::TEXT_DOMAIN), 'type' => 'error']; } else { $slug = sanitize_title($_POST['custom_slug'] ?? ''); if ($slug !== $link->custom_slug && $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$this->db_links_table} WHERE custom_slug = %s", $slug))) { $feedback = ['message' => __('این نامک سفارشی قبلاً استفاده شده است.', self::TEXT_DOMAIN), 'type' => 'error']; } else { $expire_days = absint($_POST['expire_in_days'] ?? 0); $expire_at = ($expire_days > 0) ? date('Y-m-d H:i:s', strtotime("+" . $expire_days . " days")) : null; $wpdb->update($this->db_links_table, ['product_id' => absint($_POST['product_id'] ?? 0), 'custom_slug' => $slug, 'expire_at' => $expire_at, 'max_uses' => absint($_POST['max_uses'] ?? 0)], ['link_id' => $link_id]); $feedback = ['message' => __('لینک با موفقیت بروزرسانی شد.', self::TEXT_DOMAIN), 'type' => 'success']; } } break; case 'delete_link': $link_id = absint($_POST['link_id'] ?? 0); if ($wpdb->get_var($wpdb->prepare("SELECT marketer_id FROM {$this->db_links_table} WHERE link_id = %d", $link_id)) == $user_id) { $wpdb->delete($this->db_links_table, ['link_id' => $link_id]); $feedback = ['message' => __('لینک با موفقیت حذف شد.', self::TEXT_DOMAIN), 'type' => 'success']; } else { $feedback = ['message' => __('خطا: شما اجازه حذف این لینک را ندارید.', self::TEXT_DOMAIN), 'type' => 'error']; } break; case 'save_bank': $details = ['holder_name' => sanitize_text_field($_POST['holder_name'] ?? ''), 'bank_name' => sanitize_text_field($_POST['bank_name'] ?? ''), 'card_number' => sanitize_text_field($_POST['card_number'] ?? ''), 'sheba' => sanitize_text_field($_POST['sheba'] ?? '')]; update_user_meta($user_id, 'gams_bank_details', $details); $feedback = ['message' => __('اطلاعات بانکی شما با موفقیت ذخیره شد.', self::TEXT_DOMAIN), 'type' => 'success']; break; case 'request_payout': $stats = $this->get_marketer_stats($user_id); $unpaid_amount = $stats['unpaid_commission']; $bank_details = get_user_meta($user_id, 'gams_bank_details', true); if ($unpaid_amount <= 0) { $feedback = ['message' => __('موجودی شما برای درخواست واریز کافی نیست.', self::TEXT_DOMAIN), 'type' => 'error']; } elseif (empty($bank_details) || empty($bank_details['card_number'])) { $feedback = ['message' => __('لطفاً ابتدا اطلاعات حساب بانکی خود را تکمیل کنید.', self::TEXT_DOMAIN), 'type' => 'error']; } else { $wpdb->insert($this->db_payouts_table, ['marketer_id' => $user_id, 'amount' => $unpaid_amount, 'bank_details' => json_encode($bank_details, JSON_UNESCAPED_UNICODE)]); $wpdb->query($wpdb->prepare("UPDATE {$wpdb->postmeta} SET meta_value = 'pending_payout' WHERE meta_key = %s AND meta_value = 'unpaid' AND post_id IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = %s AND meta_value = %d)", self::META_COMMISSION_STATUS, self::META_MARKETER_ID, $user_id)); delete_transient('gams_stats_' . $user_id); $feedback = ['message' => __('درخواست واریز شما با موفقیت ثبت شد و در انتظار تأیید مدیر است.', self::TEXT_DOMAIN), 'type' => 'success']; } break; } if (!empty($feedback)) { set_transient('gams_flash_message_' . $user_id, $feedback, 30); wp_redirect(esc_url_raw($_SERVER['REQUEST_URI'])); exit; } }
+    private function handle_dashboard_form_submissions($user_id) { if ('POST' !== $_SERVER['REQUEST_METHOD'] || !isset($_POST['gams_action_nonce']) || !wp_verify_nonce($_POST['gams_action_nonce'], 'gams_dashboard_action')) return; global $wpdb; $action = sanitize_key($_POST['gams_action'] ?? ''); $feedback = []; switch ($action) { case 'generate_link': $slug = sanitize_title($_POST['custom_slug'] ?? ''); if (empty($slug)) $slug = 'ref-' . uniqid(); if ($wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$this->db_links_table} WHERE custom_slug = %s", $slug))) { $feedback = ['message' => __('این نامک سفارشی قبلاً استفاده شده است.', self::TEXT_DOMAIN), 'type' => 'error']; } else { $expire_days = absint($_POST['expire_in_days'] ?? 0); $expire_at = ($expire_days > 0) ? date('Y-m-d H:i:s', strtotime("+" . $expire_days . " days")) : null; $wpdb->insert($this->db_links_table, ['marketer_id' => $user_id, 'product_id' => absint($_POST['product_id'] ?? 0), 'custom_slug' => $slug, 'expire_at' => $expire_at, 'max_uses' => absint($_POST['max_uses'] ?? 0)]); $feedback = ['message' => __('لینک بازاریابی با موفقیت ساخته شد.', self::TEXT_DOMAIN), 'type' => 'success']; } break; case 'update_link': $link_id = absint($_POST['link_id'] ?? 0); $link = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$this->db_links_table} WHERE link_id = %d AND marketer_id = %d", $link_id, $user_id)); if (!$link) { $feedback = ['message' => __('خطا: لینک یافت نشد یا شما اجازه ویرایش آن را ندارید.', self::TEXT_DOMAIN), 'type' => 'error']; } else { $slug = sanitize_title($_POST['custom_slug'] ?? ''); if ($slug !== $link->custom_slug && $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$this->db_links_table} WHERE custom_slug = %s", $slug))) { $feedback = ['message' => __('این نامک سفارشی قبلاً استفاده شده است.', self::TEXT_DOMAIN), 'type' => 'error']; } else { $expire_days = absint($_POST['expire_in_days'] ?? 0); $expire_at = ($expire_days > 0) ? date('Y-m-d H:i:s', strtotime("+" . $expire_days . " days")) : null; $wpdb->update($this->db_links_table, ['product_id' => absint($_POST['product_id'] ?? 0), 'custom_slug' => $slug, 'expire_at' => $expire_at, 'max_uses' => absint($_POST['max_uses'] ?? 0)], ['link_id' => $link_id]); $feedback = ['message' => __('لینک با موفقیت بروزرسانی شد.', self::TEXT_DOMAIN), 'type' => 'success']; } } break; case 'delete_link': $link_id = absint($_POST['link_id'] ?? 0); if ($wpdb->get_var($wpdb->prepare("SELECT marketer_id FROM {$this->db_links_table} WHERE link_id = %d", $link_id)) == $user_id) { $wpdb->delete($this->db_links_table, ['link_id' => $link_id]); $feedback = ['message' => __('لینک با موفقیت حذف شد.', self::TEXT_DOMAIN), 'type' => 'success']; } else { $feedback = ['message' => __('خطا: شما اجازه حذف این لینک را ندارید.', self::TEXT_DOMAIN), 'type' => 'error']; } break; case 'save_bank': $details = ['holder_name' => sanitize_text_field($_POST['holder_name'] ?? ''), 'bank_name' => sanitize_text_field($_POST['bank_name'] ?? ''), 'card_number' => sanitize_text_field($_POST['card_number'] ?? ''), 'sheba' => sanitize_text_field($_POST['sheba'] ?? '')]; update_user_meta($user_id, 'gams_bank_details', $details); $feedback = ['message' => __('اطلاعات بانکی شما با موفقیت ذخیره شد.', self::TEXT_DOMAIN), 'type' => 'success']; break; case 'request_payout': $stats = $this->get_marketer_stats($user_id); $unpaid_amount = $stats['unpaid_commission']; $bank_details = get_user_meta($user_id, 'gams_bank_details', true); if ($unpaid_amount <= 0) { $feedback = ['message' => __('موجودی شما برای درخواست واریز کافی نیست.', self::TEXT_DOMAIN), 'type' => 'error']; } elseif (empty($bank_details) || empty($bank_details['card_number'])) { $feedback = ['message' => __('لطفاً ابتدا اطلاعات حساب بانکی خود را تکمیل کنید.', self::TEXT_DOMAIN), 'type' => 'error']; } else { $wpdb->insert($this->db_payouts_table, ['marketer_id' => $user_id, 'amount' => $unpaid_amount, 'bank_details' => json_encode($bank_details, JSON_UNESCAPED_UNICODE)]); $wpdb->query($wpdb->prepare("UPDATE {$wpdb->postmeta} SET meta_value = 'pending_payout' WHERE meta_key = %s AND meta_value = 'unpaid' AND post_id IN (SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = %s AND meta_value = %d)", self::META_COMMISSION_STATUS, self::META_MARKETER_ID, $user_id)); delete_transient('gams_stats_' . $user_id); $feedback = ['message' => __('درخواست واریز شما با موفقیت ثبت شد و در انتظار تأیید مدیر است.', self::TEXT_DOMAIN), 'type' => 'success']; } break; } if (!empty($feedback)) { set_transient('gams_flash_message_' . $user_id, $feedback, 30); wp_redirect(esc_url_raw(add_query_arg('gams_tab', 'links', remove_query_arg('gams_tab')) . '#links')); exit; } }
     
     private function render_tab_overview($user_id) { $stats = $this->get_marketer_stats($user_id); $referral_link = add_query_arg([ 'utm_source' => self::UTM_SOURCE_VAL, self::UTM_CAMPAIGN_VAR => $user_id, ], home_url('/')); ob_start(); ?> <h2 class="gams-h2"><?php esc_html_e('نمای کلی بازاریابی', self::TEXT_DOMAIN); ?></h2> <div class="gams-grid"><div class="gams-grid-item"><div class="gams-icon"><i class="bi bi-cash-coin"></i></div><div><h3 class="gams-h3"><?php esc_html_e('درآمد کل', self::TEXT_DOMAIN); ?></h3><p class="gams-p"><?php echo wc_price($stats['total_commission']); ?></p></div></div><div class="gams-grid-item"><div class="gams-icon"><i class="bi bi-cart-check-fill"></i></div><div><h3 class="gams-h3"><?php esc_html_e('تعداد فروش موفق', self::TEXT_DOMAIN); ?></h3><p class="gams-p"><?php echo esc_html($stats['sales_count']); ?></p></div></div><div class="gams-grid-item"><div class="gams-icon"><i class="bi bi-cursor-fill"></i></div><div><h3 class="gams-h3"><?php esc_html_e('تعداد کلیک', self::TEXT_DOMAIN); ?></h3><p class="gams-p"><?php echo esc_html($stats['total_clicks']); ?></p></div></div></div> <div class="gams-card"><h3 class="gams-card-title"><i class="bi bi-link-45deg"></i> <?php esc_html_e('لینک بازاریابی عمومی شما', self::TEXT_DOMAIN); ?></h3><div class="gams-input-group"><input type="text" value="<?php echo esc_url($referral_link); ?>" readonly id="gams-general-link" class="gams-input"><button class="gams-button" onclick="gamsCopy('gams-general-link')"><i class="bi bi-clipboard"></i> <?php esc_html_e('کپی', self::TEXT_DOMAIN); ?></button><button class="gams-button gams-qr-button" onclick="showGamsQrCode('<?php echo esc_js($referral_link); ?>')"><i class="bi bi-qr-code"></i> <?php esc_html_e('کد QR', self::TEXT_DOMAIN); ?></button></div></div> <div class="gams-card"><h3 class="gams-card-title"><i class="bi bi-bar-chart-line-fill"></i> <?php esc_html_e('نمودار درآمد ماهانه', self::TEXT_DOMAIN); ?></h3><div class="gams-chart-container"><canvas id="gamsMonthlyCommissionChart"></canvas></div></div> <?php return ob_get_clean(); }
     
     private function render_tab_links($user_id) {
         global $wpdb;
 
-        // Handle product search
-        $searched_products = [];
-        $search_term = '';
-        if (isset($_POST['gams_product_search_term'])) {
-            $search_term = sanitize_text_field($_POST['gams_product_search_term']);
-            if (!empty($search_term)) {
-                $searched_products = wc_get_products(['s' => $search_term, 'limit' => 50]);
-            }
+        $search_term = isset($_POST['gams_product_search_term']) ? sanitize_text_field(wp_unslash($_POST['gams_product_search_term'])) : '';
+        $product_query_args = ['limit' => -1, 'status' => 'publish', 'orderby' => 'title', 'order' => 'ASC'];
+
+        if (!empty($search_term)) {
+            $product_query_args['s'] = $search_term;
+            $product_query_args['limit'] = 50; 
         }
 
+        $products_to_display = wc_get_products($product_query_args);
         $links = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$this->db_links_table} WHERE marketer_id = %d ORDER BY created_at DESC", $user_id));
+        
         ob_start();
         ?>
         <h2 class="gams-h2"><?php esc_html_e('مدیریت لینک‌ها', self::TEXT_DOMAIN); ?></h2>
         <div class="gams-card">
             <h3 class="gams-card-title"><i class="bi bi-plus-circle-fill"></i> <?php esc_html_e('ساخت لینک جدید', self::TEXT_DOMAIN); ?></h3>
 
-            <!-- Product Search Form -->
             <form method="POST" action="#links" style="margin-bottom: 25px; padding-bottom: 25px; border-bottom: 1px solid var(--gams-border-color);">
-                <label class="gams-label" for="gams_product_search_term_input"><?php esc_html_e('۱. ابتدا محصول مورد نظر را جستجو کنید (اختیاری)', self::TEXT_DOMAIN); ?></label>
+                <label class="gams-label" for="gams_product_search_term_input"><?php esc_html_e('۱. برای محدود کردن لیست، محصول را جستجو کنید (اختیاری)', self::TEXT_DOMAIN); ?></label>
                 <div class="gams-input-group">
                     <input type="text" id="gams_product_search_term_input" name="gams_product_search_term" value="<?php echo esc_attr($search_term); ?>" class="gams-input" placeholder="<?php esc_attr_e('نام محصول را وارد کنید...', self::TEXT_DOMAIN); ?>">
                     <button type="submit" class="gams-button"><i class="bi bi-search"></i> <?php esc_html_e('جستجو', self::TEXT_DOMAIN); ?></button>
                 </div>
             </form>
 
-            <!-- Link Generation Form -->
             <form method="POST" action="#links">
                 <input type="hidden" name="gams_action" value="generate_link">
                 <?php wp_nonce_field('gams_dashboard_action', 'gams_action_nonce'); ?>
                 <div class="gams-form-grid">
                     <div>
-                        <label class="gams-label" for="gams_product_id_select"><?php esc_html_e('۲. محصول را از لیست زیر انتخاب کنید', self::TEXT_DOMAIN); ?></label>
+                        <label class="gams-label" for="gams_product_id_select"><?php esc_html_e('۲. محصول را از لیست انتخاب کنید', self::TEXT_DOMAIN); ?></label>
                         <select id="gams_product_id_select" name="product_id" class="gams-input">
                             <option value="0"><?php esc_html_e('لینک کلی سایت (بدون انتخاب محصول)', self::TEXT_DOMAIN); ?></option>
-                            <?php if (!empty($searched_products)): ?>
-                                <?php foreach ($searched_products as $product): ?>
+                            <?php if (!empty($products_to_display)): ?>
+                                <?php foreach ($products_to_display as $product): ?>
                                     <option value="<?php echo esc_attr($product->get_id()); ?>"><?php echo esc_html($product->get_name()); ?></option>
                                 <?php endforeach; ?>
                             <?php elseif (!empty($search_term)): ?>
